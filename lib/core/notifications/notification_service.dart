@@ -1,12 +1,16 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 class NotificationService {
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
-  static const _channelId = 'default_channel_v2';
-  static const _channelName = 'General';
+
+  static const _channelId = 'high_importance_channel';
+  static const _channelName = 'High Importance Notifications';
   static const _channelDesc = 'Canal de notificaciones generales';
+
   Future<void> init() async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
@@ -14,15 +18,21 @@ class NotificationService {
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
-    const settings = InitializationSettings(android: androidInit, iOS: iosInit);
-    await _local.initialize(settings);
-    const channel = AndroidNotificationChannel(
+
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
+
+    await _local.initialize(initSettings);
+
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
       _channelId,
       _channelName,
       description: _channelDesc,
-      importance: Importance.high,
-      playSound: true,
+      importance: Importance.max,
     );
+
     await _local
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -52,45 +62,44 @@ class NotificationService {
     );
   }
 
-  /// Muestra notificación con imagen remota (Big Picture)
+  Future<String> _downloadAndSaveFile(String url, String fileName) async {
+    final directory = await getTemporaryDirectory();
+    final filePath = '${directory.path}/$fileName';
+    final file = await DefaultCacheManager().getSingleFile(url);
+    return file.path;
+  }
+
   Future<void> showBigPicture({
     required String title,
     required String body,
     required String imageUrl,
   }) async {
-    try {
-      final file = await DefaultCacheManager().getSingleFile(imageUrl);
+    final bigPicturePath = await _downloadAndSaveFile(
+      imageUrl,
+      'bigPicture.jpg',
+    );
 
-      final bigPicture = BigPictureStyleInformation(
-        FilePathAndroidBitmap(file.path), // ✅ ahora es una ruta local
-        contentTitle: title,
-        summaryText: body,
-        hideExpandedLargeIcon: false,
-      );
+    final styleInformation = BigPictureStyleInformation(
+      FilePathAndroidBitmap(bigPicturePath),
+      contentTitle: title,
+      summaryText: body,
+    );
 
-      final androidDetails = AndroidNotificationDetails(
-        _channelId,
-        _channelName,
-        styleInformation: bigPicture,
-        importance: Importance.high,
-        priority: Priority.high,
-        playSound: true,
-      );
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      styleInformation: styleInformation,
+      importance: Importance.max,
+      priority: Priority.high,
+    );
 
-      const iosDetails = DarwinNotificationDetails(
-        presentAlert: true,
-        presentBadge: true,
-        presentSound: true,
-      );
+    final notificationDetails = NotificationDetails(android: androidDetails);
 
-      await _local.show(
-        DateTime.now().millisecondsSinceEpoch ~/ 1000,
-        title,
-        body,
-        NotificationDetails(android: androidDetails, iOS: iosDetails),
-      );
-    } catch (e) {
-      print('❌ Error al mostrar imagen en notificación: $e');
-    }
+    await _local.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      notificationDetails,
+    );
   }
 }
